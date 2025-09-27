@@ -1,0 +1,18 @@
+---
+- hosts: all
+  become: true
+  tasks:
+    - name: Update repository index
+      apt:
+        update_cache: yes
+
+    - name: Install apache2 package
+      apt:
+        name: apache2
+        state: latest
+
+    - name: Add PHP support for Apache
+      apt:
+        name: libapache2-mod-php
+        state: latest
+
