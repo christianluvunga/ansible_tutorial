@@ -1,3 +1,4 @@
 [all]
-192.168.111.81 ansible_user=mayedi
-192.168.111.57 ansible_user=chris
+192.168.111.81 ansible_user=mayedi apache_package=apache2 php_package=libapache2-mod-php
+192.168.111.57 ansible_user=chris apache_package=apache2 php_package=libapache2-mod-php
+#192.168.111.248 ansible_user=luvunga apache_package=httpd php_package=php
