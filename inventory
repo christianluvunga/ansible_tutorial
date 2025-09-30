@@ -1,13 +1,13 @@
-[all]
+#[all]
 
-#[web servers]
+[web_servers]
 192.168.111.81 ansible_user=mayedi
 192.168.111.59 ansible_user=christian
 
-#[db_servers]
+[db_servers]
 192.168.111.57 ansible_user=chris
 
-#[db_servers]
+[db_servers]
 192.168.111.63 ansible_user=luvunga
 
 
