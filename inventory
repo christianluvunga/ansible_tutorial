@@ -2,7 +2,7 @@
 
 #[web servers]
 192.168.111.81 ansible_user=mayedi
-#192.168.111.248 ansible_user=luvunga
+192.168.111.59 ansible_user=christian
 
 #[db_servers]
 192.168.111.57 ansible_user=chris
@@ -10,7 +10,6 @@
 #[db_servers]
 192.168.111.63 ansible_user=luvunga
 
-#Enlever les commetaires une fois que nous avons d'autres serveurs
 
 
 
@@ -18,5 +17,4 @@
 
 #192.168.111.81 ansible_user=mayedi apache_package=apache2 php_package=libapache2-mod-php
 #192.168.111.57 ansible_user=chris apache_package=apache2 php_package=libapache2-mod-php
-#192.168.111.248 ansible_user=luvunga apache_package=httpd php_package=php
 
