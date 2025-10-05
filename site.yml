@@ -3,6 +3,22 @@
   become: true
   tasks:
 
+    - name: update system (AlmaLinux)
+      dnf:
+        name: "*"
+        state: latest
+      when: ansible_distribution == "AlmaLinux"
+
+    - name: update system (Ubuntu)
+      apt:
+        upgrade: dist
+        update_cache: yes
+      when: ansible_distribution == "Ubuntu"
+
+- hosts: web_servers
+  become: true
+  tasks:
+
     - name: install apache and php for Ubuntu servers
       apt:
         name:
@@ -12,16 +28,24 @@
         update_cache: yes
       when: ansible_distribution == "Ubuntu"
 
-    - name: update repository index for CentOS
-      dnf:
-        name: "*"
-        state: latest
-      when: ansible_distribution == "CentOS"
-
-    - name: install apache and php for CentOS servers
+    - name: install apache and php for AlmaLinux servers
       dnf:
         name:
           - httpd
           - php
         state: latest
-      when: ansible_distribution == "CentOS"
+      when: ansible_distribution == "AlmaLinux"
+
+    - name: ensure Apache is running and enabled (Ubuntu)
+      service:
+        name: apache2
+        state: started
+        enabled: yes
+      when: ansible_distribution == "Ubuntu"
+
+    - name: ensure Apache is running and enabled (AlmaLinux)
+      service:
+        name: httpd
+        state: started
+        enabled: yes
+      when: ansible_distribution == "AlmaLinux"
