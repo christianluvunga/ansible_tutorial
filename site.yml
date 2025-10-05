@@ -9,24 +9,23 @@
         state: latest
       when: ansible_distribution == "AlmaLinux"
 
-    - name: update system (Ubuntu)
+    - name: update system (Debian)
       apt:
         upgrade: dist
         update_cache: yes
-      when: ansible_distribution == "Ubuntu"
+      when: ansible_distribution in ["Ubuntu", "Debian"]
 
 - hosts: web_servers
   become: true
   tasks:
 
-    - name: install apache and php for Ubuntu servers
+    - name: install apache and php for Debian servers
       apt:
         name:
           - apache2
           - libapache2-mod-php
         state: latest
-        update_cache: yes
-      when: ansible_distribution == "Ubuntu"
+      when: ansible_distribution in ["Ubuntu", "Debian"]
 
     - name: install apache and php for AlmaLinux servers
       dnf:
@@ -36,12 +35,12 @@
         state: latest
       when: ansible_distribution == "AlmaLinux"
 
-    - name: ensure Apache is running and enabled (Ubuntu)
+    - name: ensure Apache is running and enabled (Debian)
       service:
         name: apache2
         state: started
         enabled: yes
-      when: ansible_distribution == "Ubuntu"
+      when: ansible_distribution in ["Ubuntu", "Debian"]
 
     - name: ensure Apache is running and enabled (AlmaLinux)
       service:
@@ -49,3 +48,21 @@
         state: started
         enabled: yes
       when: ansible_distribution == "AlmaLinux"
+
+- hosts: db_servers
+  become: true
+  tasks:
+
+    - name: install mariadb package (Almalinux)
+      dnf:
+        name: mariadb          
+        state: latest
+        update_cache: yes
+      when: ansible_distribution == "AlmaLinux"
+
+    - name: install mariadb package (Debian)
+      apt:
+        name: mariadb-server          
+        state: latest
+        update_cache: yes
+      when: ansible_distribution in ["Ubuntu", "Debian"]
