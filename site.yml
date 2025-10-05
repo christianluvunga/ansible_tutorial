@@ -66,3 +66,14 @@
         state: latest
         update_cache: yes
       when: ansible_distribution in ["Ubuntu", "Debian"]
+
+
+- hosts: file_servers
+  become: true
+  tasks:
+
+    - name: install samba package (Almalinux)
+      package:
+        name: samba          
+        state: latest
+#        update_cache: yes
