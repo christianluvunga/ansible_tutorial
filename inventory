@@ -9,6 +9,7 @@
 
 [db_servers]
 192.168.111.63 ansible_user=luvunga
+192.168.111.60 ansible_user=nega
 
 
 
