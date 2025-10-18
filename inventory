@@ -11,6 +11,11 @@
 192.168.111.63 ansible_user=luvunga
 192.168.111.60 ansible_user=nega
 
+[workstations]
+192.168.111.100 ansible_user=christianluvunga
+192.168.111.63 ansible_user=luvunga
+192.168.111.81 ansible_user=mayedi
+
 
 
 
