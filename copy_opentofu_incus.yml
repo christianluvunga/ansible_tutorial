@@ -1,0 +1,8 @@
+---
+- hosts: all
+  tasks:
+    - name: Copier le dossier opentofu-incus dans le /home de chaque utilisateur
+      ansible.posix.synchronize:
+        src: /home/chris/opentofu-incus/
+        dest: /home/{{ ansible_user }}/opentofu-incus/
+        delete: no
