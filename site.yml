@@ -41,6 +41,15 @@
         state: latest
       when: ansible_distribution == "AlmaLinux"
 
+    - name: copy defaut html file for site
+      tags: apache,Almalinux,httpd
+      copy:
+        src: default_site.html
+        dest: /var/www/html/index.html
+        owner: root
+        group: root
+        mode: 0644
+
     - name: ensure Apache is running and enabled (Debian)
       service:
         name: apache2
