@@ -3,21 +3,31 @@
   become: true
   pre_tasks:
 
-    - name: update system (AlmaLinux)
+    - name: update repo cache (AlmaLinux)
       tags: always
       dnf:
         name: "*"
-        update_only: yes
         update_cache: yes
         state: latest
+      changed_when: false
       when: ansible_distribution == "AlmaLinux"
 
-    - name: update system (Debian)
+    - name: update repo cache (Debian)
       tags: always
       apt:
-        upgrade: dist
         update_cache: yes
+      changed_when: false
       when: ansible_distribution in ["Ubuntu", "Debian"]
+
+- hosts: all
+  become: true
+  tasks:
+
+    - name: add ssh key for simone
+      tags: always
+      authorized_key:
+        user: simone
+        key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJkruS3bM+KLWEKDiBg4i6IMJHLglEO0b7+EI/iCSnaX ansible"
 
 - hosts: workstations
   become: true
