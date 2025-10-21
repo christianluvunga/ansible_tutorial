@@ -1,7 +1,14 @@
 [all]
-10.11.131.43 ansible_user=root
-10.11.131.66 ansible_user=root
-10.11.131.28 ansible_user=root
+10.11.131.43
+10.11.131.66
+10.11.131.28
+10.11.131.123
+
+
+#10.11.131.43 ansible_user=root
+#10.11.131.66 ansible_user=root
+#10.11.131.28 ansible_user=root
+#10.11.131.123 ansible_user=root
 
 #[web_servers]
 #192.168.111.81
