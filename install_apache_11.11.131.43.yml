@@ -1,0 +1,22 @@
+---
+- name: Installer et configurer Apache2 sur Debian
+  hosts:
+    - 10.11.131.43
+    - 10.11.131.44
+    - 10.11.131.45
+  become: yes  # Utiliser sudo pour les commandes root
+  tasks:
+    - name: Mettre à jour les paquets apt
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Installer le paquet apache2
+      ansible.builtin.apt:
+        name: apache2
+        state: present
+
+    - name: S'assurer qu'Apache est démarré
+      ansible.builtin.service:
+        name: apache2
+        state: started
+        enabled: yes

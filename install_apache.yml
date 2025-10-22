@@ -16,7 +16,7 @@
       dnf:
         name: "*"
         state: latest
-      when: ansible_distribution == "CentOS"
+      when: ansible_distribution == "AlmaLinux"
 
     - name: install apache and php for CentOS servers
       dnf:
@@ -24,4 +24,4 @@
           - httpd
           - php
         state: latest
-      when: ansible_distribution == "CentOS"
+      when: ansible_distribution == "AlmaLinux"

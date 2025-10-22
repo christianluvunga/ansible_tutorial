@@ -1,5 +1,5 @@
 - name: restart_apache
-  tags: apache,almalinux,httpd
+  tags: apache,almalinux,httpd,debian
   service:
     name: "{{ apache_service }}"
     state: restarted

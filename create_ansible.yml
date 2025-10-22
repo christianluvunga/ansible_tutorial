@@ -1,0 +1,49 @@
+---
+- name: Créer l'utilisateur ansible sur tous les hôtes
+  hosts: all
+  become: true
+  vars:
+    ansible_user_name: ansible
+    ansible_ssh_key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+  tasks:
+
+    - name: Déterminer le groupe admin selon le type d'OS
+      set_fact:
+        admin_group: "{{ 'sudo' if ansible_facts['os_family'] == 'Debian' else 'wheel' }}"
+
+    - name: Créer le groupe admin s'il n'existe pas
+      group:
+        name: "{{ admin_group }}"
+        state: present
+
+    - name: Créer l'utilisateur ansible
+      user:
+        name: "{{ ansible_user_name }}"
+        shell: /bin/bash
+        groups: "{{ admin_group }}"
+        append: yes
+        create_home: yes
+
+    - name: Créer le dossier .ssh pour ansible
+      file:
+        path: "/home/{{ ansible_user_name }}/.ssh"
+        state: directory
+        owner: "{{ ansible_user_name }}"
+        group: "{{ ansible_user_name }}"
+        mode: '0700'
+
+    - name: Copier la clé publique pour ansible
+      copy:
+        content: "{{ ansible_ssh_key }}"
+        dest: "/home/{{ ansible_user_name }}/.ssh/authorized_keys"
+        owner: "{{ ansible_user_name }}"
+        group: "{{ ansible_user_name }}"
+        mode: '0600'
+
+    - name: Autoriser sudo sans mot de passe pour ansible
+      copy:
+        dest: "/etc/sudoers.d/{{ ansible_user_name }}"
+        content: "{{ ansible_user_name }} ALL=(ALL) NOPASSWD:ALL\n"
+        owner: root
+        group: root
+        mode: '0440'

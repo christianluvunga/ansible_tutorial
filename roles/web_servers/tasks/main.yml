@@ -1,11 +1,12 @@
 - name: install web server packages
   tags: apache,apache2,almalinux,httpd,ubuntu
+  become: yes
   package:
     name:
       - "{{ apache_package_name }}"
       - "{{ php_package_name }}"
     state: latest
-  when: ansible_distribution == "AlmaLinux"
+  when: ansible_distribution in ["Debian","AlmaLinux"]
 
 - name: start and enable apache
   tags: apache,almalinux,httpd
