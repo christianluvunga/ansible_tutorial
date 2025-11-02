@@ -1,0 +1,265 @@
+---
+- name: Déploiement complet et intelligent de Wazuh Agent
+  hosts: all
+  become: yes
+  vars:
+    wazuh_manager_ip: "192.168.111.74"
+    
+  tasks:
+    # PHASE 1: DIAGNOSTIC INITIAL
+    - name: Collecter les informations du système
+      setup:
+        gather_subset:
+          - os_family
+          - distribution
+
+    - name: Vérifier l'état actuel de Wazuh
+      block:
+        - name: Vérifier si Wazuh est installé
+          command: which wazuh-agent
+          register: wazuh_installed
+          ignore_errors: yes
+          changed_when: false
+
+        - name: Vérifier si le service existe
+          systemd:
+            name: wazuh-agent
+            state: started
+          register: service_status
+          ignore_errors: yes
+          changed_when: false
+
+        - name: Vérifier si la configuration existe
+          stat:
+            path: /var/ossec/etc/ossec.conf
+          register: config_exists
+
+      rescue:
+        - name: Marquer Wazuh comme non installé en cas d'erreur
+          set_fact:
+            wazuh_installed: {"rc": 1}
+            service_status: {"state": "absent"}
+            config_exists: {"stat": {"exists": false}}
+
+    - name: Déterminer l'état de la machine
+      set_fact:
+        machine_state: >
+          {% if wazuh_installed.rc == 0 and service_status.state == "started" and config_exists.stat.exists %}
+          "healthy"
+          {% elif wazuh_installed.rc == 0 and config_exists.stat.exists %}
+          "installed_but_issue"
+          {% elif wazuh_installed.rc == 0 %}
+          "installed_no_config"
+          {% else %}
+          "not_installed"
+          {% endif %}
+
+    - name: Afficher le diagnostic
+      debug:
+        msg: |
+          {{ inventory_hostname }} ({{ ansible_distribution }}) - État: {{ machine_state }}
+          - Wazuh installé: {{ wazuh_installed.rc == 0 }}
+          - Service actif: {{ service_status.state == "started" }}
+          - Config existante: {{ config_exists.stat.exists }}
+
+    # PHASE 2: INSTALLATION POUR MACHINES SANS WAZUH
+    - name: Installer Wazuh sur les machines non installées (Debian/Ubuntu)
+      block:
+        - name: Installer les dépendances pour Debian
+          apt:
+            name:
+              - lsb-release
+              - curl
+            state: present
+            update_cache: yes
+          when: ansible_distribution == "Debian"
+
+        - name: Télécharger le package DEB
+          get_url:
+            url: https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.0-1_amd64.deb
+            dest: /tmp/wazuh-agent_4.14.0-1_amd64.deb
+            mode: '0644'
+
+        - name: Installer le package avec variable d'environnement
+          shell: |
+            export WAZUH_MANAGER='{{ wazuh_manager_ip }}'
+            dpkg -i /tmp/wazuh-agent_4.14.0-1_amd64.deb || apt-get install -f -y
+          args:
+            executable: /bin/bash
+
+      when: 
+        - machine_state == "not_installed"
+        - ansible_os_family == "Debian"
+
+    - name: Installer Wazuh sur les machines non installées (RedHat/CentOS/AlmaLinux)
+      block:
+        - name: Importer la clé GPG Wazuh
+          rpm_key:
+            key: https://packages.wazuh.com/key/GPG-KEY-WAZUH
+            state: present
+
+        - name: Télécharger et installer le package RPM
+          yum:
+            name: https://packages.wazuh.com/4.x/yum/wazuh-agent-4.14.0-1.x86_64.rpm
+            state: present
+
+      when: 
+        - machine_state == "not_installed" 
+        - ansible_os_family == "RedHat"
+
+    # PHASE 3: CONFIGURATION POUR TOUTES LES MACHINES (SAUF CELLES HEALTHY)
+    - name: Appliquer la configuration Wazuh complète
+      block:
+        - name: Arrêter le service Wazuh pour reconfiguration
+          systemd:
+            name: wazuh-agent
+            state: stopped
+          ignore_errors: yes
+          when: machine_state != "not_installed"
+
+        - name: Créer la configuration Wazuh complète
+          copy:
+            content: |
+              <!-- Wazuh Agent Configuration -->
+              <ossec_config>
+                <!-- Client section -->
+                <client>
+                  <server>
+                    <address>{{ wazuh_manager_ip }}</address>
+                    <port>1514</port>
+                    <protocol>tcp</protocol>
+                  </server>
+                  <config-profile>
+                    {% if ansible_distribution == "Debian" %}debian,ubuntu
+                    {% elif ansible_distribution == "AlmaLinux" %}almalinux,centos,rhel
+                    {% else %}linux{% endif %}
+                  </config-profile>
+                  <notify_time>10</notify_time>
+                  <time-reconnect>60</time-reconnect>
+                  <auto_restart>yes</auto_restart>
+                </client>
+
+                <!-- Policy monitoring -->
+                <syscheck>
+                  <disabled>no</disabled>
+                  <frequency>43200</frequency>
+                  <scan_on_start>yes</scan_on_start>
+                  
+                  <!-- Directories to check -->
+                  <directories check_all="yes">/etc,/usr/bin,/usr/sbin</directories>
+                  <directories check_all="yes">/bin,/sbin</directories>
+                  
+                  <!-- Files/directories to ignore -->
+                  <ignore>/etc/mtab</ignore>
+                  <ignore>/etc/hosts.deny</ignore>
+                  <ignore>/etc/mail/statistics</ignore>
+                  <ignore>/etc/random-seed</ignore>
+                  <ignore>/etc/adjtime</ignore>
+                </syscheck>
+
+                <!-- Rootcheck -->
+                <rootcheck>
+                  <disabled>no</disabled>
+                  <check_unixaudit>yes</check_unixaudit>
+                  <check_files>yes</check_files>
+                  <check_trojans>yes</check_trojans>
+                  <check_dev>yes</check_dev>
+                  <check_sys>yes</check_sys>
+                  <check_pids>yes</check_pids>
+                  <check_ports>yes</check_ports>
+                  <check_if>yes</check_if>
+                  <frequency>43200</frequency>
+                </rootcheck>
+
+                <!-- Active response -->
+                <active-response>
+                  <disabled>no</disabled>
+                </active-response>
+
+                <!-- Logs to analyze -->
+                <localfile>
+                  <log_format>syslog</log_format>
+                  <location>/var/log/{% if ansible_os_family == 'Debian' %}auth.log{% else %}secure{% endif %}</location>
+                </localfile>
+
+                <localfile>
+                  <log_format>syslog</log_format>
+                  <location>/var/log/{% if ansible_os_family == 'Debian' %}syslog{% else %}messages{% endif %}</location>
+                </localfile>
+
+              </ossec_config>
+            dest: /var/ossec/etc/ossec.conf
+            mode: '0644'
+            backup: yes
+
+        - name: Vérifier la syntaxe de la configuration
+          command: /var/ossec/bin/wazuh-agentd -t
+          register: config_test
+          changed_when: false
+
+        - name: Afficher le résultat du test de configuration
+          debug:
+            msg: "Test configuration {{ inventory_hostname }} : {{ config_test.stdout }}{{ config_test.stderr }}"
+
+      when: machine_state != "healthy"
+
+    # PHASE 4: DÉMARRAGE ET ACTIVATION DU SERVICE
+    - name: Démarrer et activer le service Wazuh
+      systemd:
+        name: wazuh-agent
+        state: started
+        enabled: yes
+      register: final_service_status
+
+    - name: Forcer le redémarrage si nécessaire (pour les machines reconfigurées)
+      systemd:
+        name: wazuh-agent
+        state: restarted
+      when: 
+        - machine_state != "healthy"
+        - final_service_status.state == "started"
+
+    # PHASE 5: NETTOYAGE
+    - name: Nettoyer les packages temporaires
+      file:
+        path: "/tmp/wazuh-agent-*"
+        state: absent
+      ignore_errors: yes
+
+    # PHASE 6: VÉRIFICATION FINALE
+    - name: Vérification finale du déploiement
+      block:
+        - name: Vérifier le statut final du service
+          systemd:
+            name: wazuh-agent
+            state: started
+          register: final_check
+
+        - name: Vérifier la connexion
+          command: netstat -tunp | grep 1514 || ss -tunp | grep 1514
+          register: connection_check
+          changed_when: false
+
+        - name: Afficher le résultat final
+          debug:
+            msg: |
+              🎯 {{ inventory_hostname }} - DÉPLOIEMENT TERMINÉ
+              ✅ Service: {{ final_check.state }}
+              🔌 Connexion: {% if connection_check.stdout %}Active{% else %}En attente{% endif %}
+              📋 OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+              🎯 Manager: {{ wazuh_manager_ip }}
+
+    - name: Résumé global du déploiement
+      debug:
+        msg: |
+          🎉 DÉPLOIEMENT WAZUH COMPLET TERMINÉ
+          📊 Machines totales: {{ groups['all'] | length }}
+          🎯 Manager: {{ wazuh_manager_ip }}
+          ⏰ Date: {{ ansible_date_time.iso8601 }}
+      run_once: yes
+
+  handlers:
+    - name: restart wazuh agent
+      systemd:
+        name: wazuh-agent
+        state: restarted

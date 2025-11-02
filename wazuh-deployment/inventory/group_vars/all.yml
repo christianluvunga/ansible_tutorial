@@ -1,0 +1,25 @@
+---
+wazuh_manager_ip: "192.168.111.74"
+wazuh_agent_version: "4.14.0-1"
+
+# URLs des packages par distribution
+wazuh_packages:
+  debian:
+    url: "https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_{{ wazuh_agent_version }}_amd64.deb"
+    name: "wazuh-agent_{{ wazuh_agent_version }}_amd64.deb"
+  ubuntu:
+    url: "https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_{{ wazuh_agent_version }}_amd64.deb"
+    name: "wazuh-agent_{{ wazuh_agent_version }}_amd64.deb"
+  centos:
+    url: "https://packages.wazuh.com/4.x/yum/wazuh-agent-{{ wazuh_agent_version }}.x86_64.rpm"
+    name: "wazuh-agent-{{ wazuh_agent_version }}.x86_64.rpm"
+  almalinux:
+    url: "https://packages.wazuh.com/4.x/yum/wazuh-agent-{{ wazuh_agent_version }}.x86_64.rpm"
+    name: "wazuh-agent-{{ wazuh_agent_version }}.x86_64.rpm"
+
+# Commandes de gestion de services par OS
+service_handlers:
+  debian: systemctl
+  ubuntu: systemctl
+  centos: systemctl
+  almalinux: systemctl
