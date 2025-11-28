@@ -1,5 +1,5 @@
 ---
-wazuh_manager_ip: "192.168.111.74"
+wazuh_manager_ip: "192.168.111.83"
 wazuh_agent_version: "4.14.0-1"
 
 # URLs des packages par distribution

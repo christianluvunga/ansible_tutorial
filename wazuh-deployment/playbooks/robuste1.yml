@@ -84,6 +84,7 @@
               - curl
             state: present
             update_cache: yes
+
         - name: Télécharger le package DEB
           get_url:
             url: https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.0-1_amd64.deb
@@ -114,9 +115,8 @@
             state: present
 
       when:
-        - machine_state == "not_installed" or (machine_state == "installed_no_config" and not wazuh_binary.stat.exists)
-        - ansible_os_family == "Debian"
-
+        - machine_state == "not_installed"
+        - ansible_os_family == "RedHat"
 
     # PHASE 4: CONFIGURATION
     - name: Appliquer la configuration Wazuh complète
@@ -150,7 +150,6 @@
                 <syscheck>
                   <disabled>no</disabled>
                   <frequency>43200</frequency>
-                  <directories check_all="yes" report_changes="yes" realtime="yes">/home</directories>
                 </syscheck>
                 <rootcheck>
                   <disabled>no</disabled>
@@ -167,11 +166,10 @@
           command: /var/ossec/bin/wazuh-agentd -t
           register: config_test
           changed_when: false
-          when: wazuh_binary.stat.exists
+
         - name: Afficher le résultat du test de configuration
           debug:
             msg: "Test configuration {{ inventory_hostname }} : OK"
-          when: wazuh_binary.stat.exists
 
       when: machine_state != "healthy"
 
