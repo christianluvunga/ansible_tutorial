@@ -1,0 +1,177 @@
+---
+- name: "Installer et Configurer l'Agent GLPI"
+  hosts: all
+  become: yes
+
+  vars:
+    glpi_server: "192.168.111.91"
+
+  tasks:
+    # Premièrement, nettoyer et corriger les dépendances cassées
+    - name: "1. Corriger les dépendances cassées (Debian/Ubuntu)"
+      ansible.builtin.shell: |
+        apt clean && apt update
+        apt --fix-broken install -y
+        apt autoremove -y
+      when: ansible_os_family == "Debian"
+      args:
+        warn: false
+      ignore_errors: yes
+
+    - name: "1. Nettoyer le cache dnf (RedHat/AlmaLinux)"
+      ansible.builtin.shell: |
+        dnf clean all
+        dnf makecache
+      when: ansible_os_family == "RedHat"
+      args:
+        warn: false
+
+    # Deuxièmement, installer les dépendances de base sans spécifier de versions
+    - name: "2. Installer les dépendances Perl de base (Debian/Ubuntu)"
+      ansible.builtin.apt:
+        name:
+          - perl
+          - libwww-perl
+          - libxml-libxml-perl
+          - libyaml-perl
+          - pciutils
+          - usbutils
+          - dmidecode
+          - hwdata
+          - libcrypt-ssleay-perl
+          - libnet-ip-perl
+          - libparse-edid-perl
+          - libproc-daemon-perl
+          - libuniversal-require-perl
+          - libfile-which-perl
+          - libtext-template-perl
+          - libcpanel-json-xs-perl
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+      ignore_errors: yes
+
+    - name: "2. Installer les dépendances de base (RedHat/AlmaLinux)"
+      ansible.builtin.dnf:
+        name:
+          - epel-release
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: "3. Installer les dépendances Perl depuis EPEL (RedHat/AlmaLinux)"
+      ansible.builtin.dnf:
+        name:
+          - perl
+          - perl-DateTime
+          - perl-Data-UUID
+          - perl-HTTP-Daemon
+          - perl-YAML-Tiny
+          - perl-XML-LibXML
+          - perl-YAML
+          - perl-JSON
+          - perl-Net-IP
+          - pciutils
+          - usbutils
+          - dmidecode
+          - hwdata
+          - perl-Crypt-SSLeay
+          - perl-Net-CUPS
+          - perl-Parse-EDID
+          - perl-Proc-Daemon
+          - perl-Proc-ProcessTable
+          - perl-Universal-require
+          - perl-File-Which
+          - perl-Text-Template
+          - perl-Cpanel-JSON-XS
+        state: present
+        enablerepo: "epel"
+      when: ansible_os_family == "RedHat"
+      ignore_errors: yes
+
+    # Télécharger l'agent GLPI depuis GitHub
+    - name: "4. Télécharger l'agent GLPI (Debian/Ubuntu)"
+      ansible.builtin.get_url:
+        url: "https://github.com/glpi-project/glpi-agent/releases/download/1.15/glpi-agent_1.15-1_all.deb"
+        dest: /tmp/glpi-agent.deb
+        mode: '0644'
+        timeout: 60
+      when: ansible_os_family == "Debian"
+
+    - name: "4. Télécharger l'agent GLPI (RedHat/AlmaLinux)"
+      ansible.builtin.get_url:
+        url: "https://github.com/glpi-project/glpi-agent/releases/download/1.15/glpi-agent-1.15-1.noarch.rpm"
+        dest: /tmp/glpi-agent.rpm
+        mode: '0644'
+        timeout: 60
+      when: ansible_os_family == "RedHat"
+
+    # Installer l'agent avec gestion des erreurs
+    - name: "5. Installer l'agent GLPI (Debian/Ubuntu)"
+      block:
+        - name: "Tenter l'installation avec dpkg"
+          ansible.builtin.command: dpkg -i /tmp/glpi-agent.deb
+          register: dpkg_result
+          ignore_errors: yes
+
+        - name: "Corriger les dépendances si nécessaire"
+          ansible.builtin.command: apt-get install -f -y
+          when: dpkg_result.rc != 0
+      when: ansible_os_family == "Debian"
+
+    - name: "5. Installer l'agent GLPI (RedHat/AlmaLinux)"
+      ansible.builtin.dnf:
+        name: /tmp/glpi-agent.rpm
+        state: present
+        disable_gpg_check: yes
+      when: ansible_os_family == "RedHat"
+      ignore_errors: yes
+
+    # Configuration de l'agent
+    - name: "6. Créer le répertoire de configuration"
+      ansible.builtin.file:
+        path: /etc/glpi-agent
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: "7. Configurer l'agent GLPI"
+      ansible.builtin.copy:
+        dest: /etc/glpi-agent/agent.cfg
+        content: |
+          server = http://{{ glpi_server }}/glpi/front/inventory.php
+          # Configuration basique
+          timeout = 30
+          delaytime = 300
+          httpd-port = 62354
+          logger = stderr
+          tag = Inventory
+          # Activer tous les modules d'inventaire
+          inventories = all
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Redémarrer l'agent GLPI
+
+    - name: "8. Démarrer et activer le service"
+      ansible.builtin.service:
+        name: glpi-agent
+        state: started
+        enabled: yes
+
+    - name: "9. Tester l'agent GLPI"
+      ansible.builtin.command: glpi-agent --version
+      register: agent_version
+      changed_when: false
+      ignore_errors: yes
+
+    - name: "10. Afficher la version de l'agent"
+      ansible.builtin.debug:
+        msg: "GLPI Agent version: {{ agent_version.stdout }}"
+      when: agent_version.stdout is defined
+
+  handlers:
+    - name: "Redémarrer l'agent GLPI"
+      ansible.builtin.service:
+        name: glpi-agent
+        state: restarted

@@ -1,0 +1,146 @@
+---
+- name: "Installer et Configurer l'Agent GLPI"
+  hosts: all
+  become: yes
+
+  vars:
+    glpi_server: "192.168.111.91"
+
+  tasks:
+    # Pour Debian/Ubuntu
+    - name: "Traiter les systèmes Debian"
+      block:
+        - name: "Mettre à jour APT"
+          ansible.builtin.apt:
+            update_cache: yes
+            cache_valid_time: 3600
+
+        - name: "Installer les dépendances"
+          ansible.builtin.apt:
+            name:
+              - perl
+              - libwww-perl
+              - libxml-libxml-perl
+              - libyaml-perl
+              - pciutils
+              - usbutils
+              - dmidecode
+            state: present
+
+        - name: "Télécharger l'agent GLPI"
+          ansible.builtin.get_url:
+            url: "https://github.com/glpi-project/glpi-agent/releases/download/1.15/glpi-agent_1.15-1_all.deb"
+            dest: /tmp/glpi-agent.deb
+            mode: '0644'
+
+        - name: "Installer l'agent"
+          ansible.builtin.apt:
+            deb: /tmp/glpi-agent.deb
+            state: present
+      when: ansible_os_family == "Debian"
+      ignore_errors: yes
+
+    # Pour RedHat/AlmaLinux
+    - name: "Traiter les systèmes RedHat"
+      block:
+        - name: "Installer EPEL"
+          ansible.builtin.dnf:
+            name: epel-release
+            state: present
+
+        - name: "Configurer les dépôts supplémentaires"
+          ansible.builtin.shell: |
+            # Déterminer la version RHEL
+            if command -v rpm &> /dev/null; then
+              RHEL_VERSION=$(rpm -E %rhel 2>/dev/null || echo "unknown")
+              if [ "$RHEL_VERSION" = "8" ]; then
+                dnf config-manager --set-enabled powertools 2>/dev/null || echo "powertools non disponible"
+              elif [ "$RHEL_VERSION" = "9" ]; then
+                dnf config-manager --set-enabled crb 2>/dev/null || echo "crb non disponible"
+              fi
+            fi
+
+        - name: "Mettre à jour DNF"
+          ansible.builtin.dnf:
+            update_cache: yes
+
+        - name: "Installer les dépendances"
+          ansible.builtin.dnf:
+            name:
+              - perl
+              - perl-core
+              - perl-App-cpanminus
+              - pciutils
+              - usbutils
+              - dmidecode
+            state: present
+
+        - name: "Télécharger l'agent GLPI"
+          ansible.builtin.get_url:
+            url: "https://github.com/glpi-project/glpi-agent/releases/download/1.15/glpi-agent-1.15-1.noarch.rpm"
+            dest: /tmp/glpi-agent.rpm
+            mode: '0644'
+
+        - name: "Installer l'agent - tentative 1"
+          ansible.builtin.dnf:
+            name: /tmp/glpi-agent.rpm
+            state: present
+            disable_gpg_check: yes
+          register: install_attempt1
+          ignore_errors: yes
+
+        - name: "Installer l'agent - tentative 2 (fallback)"
+          ansible.builtin.shell: |
+            rpm -ivh /tmp/glpi-agent.rpm --nodeps --force
+          when: install_attempt1.failed
+          ignore_errors: yes
+      when: ansible_os_family == "RedHat"
+      ignore_errors: yes
+
+    # Configuration commune
+    - name: "Configurer l'agent"
+      block:
+        - name: "Créer répertoire de configuration"
+          ansible.builtin.file:
+            path: /etc/glpi-agent
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
+
+        - name: "Écrire configuration"
+          ansible.builtin.copy:
+            dest: /etc/glpi-agent/agent.cfg
+            content: |
+              server = http://{{ glpi_server }}/glpi/front/inventory.php
+              timeout = 30
+              delaytime = 300
+              logger = stderr
+              inventories = all
+            owner: root
+            group: root
+            mode: '0644'
+      notify: restart_glpi_agent
+
+    - name: "Démarrer le service"
+      ansible.builtin.service:
+        name: glpi-agent
+        state: started
+        enabled: yes
+      ignore_errors: yes
+
+    - name: "Tester l'installation"
+      ansible.builtin.command: glpi-agent --version
+      register: glpi_version
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Afficher le résultat"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} - GLPI Agent: {{ glpi_version.stdout if glpi_version.stdout else 'Non installé' }}"
+
+  handlers:
+    - name: restart_glpi_agent
+      ansible.builtin.service:
+        name: glpi-agent
+        state: restarted
