@@ -1,0 +1,243 @@
+---
+- name: Déploiement Wazuh Agent - Version Complète et Corrigée
+  hosts: all
+  become: yes
+  vars:
+    wazuh_manager_ip: "192.168.111.98"
+    wazuh_version: "4.14.0-1"
+
+  tasks:
+    # PHASE 1: VÉRIFICATION PRÉALABLE
+    - name: Vérifier si Wazuh est déjà installé
+      stat:
+        path: /var/ossec/bin/wazuh-agentd
+      register: wazuh_installed_check
+      ignore_errors: yes
+
+    - name: Déterminer si installation est nécessaire
+      set_fact:
+        installation_needed: "{{ not wazuh_installed_check.stat.exists }}"
+
+    - name: Afficher l'état avant installation
+      debug:
+        msg: |
+          {{ inventory_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }})
+          - Installation nécessaire: {{ installation_needed }}
+          - Binaire présent: {{ wazuh_installed_check.stat.exists | default(false) }}
+
+    # PHASE 2: INSTALLATION (uniquement si nécessaire)
+    - name: Installer Wazuh Agent sur Debian/Ubuntu
+      block:
+        - name: Installer curl (dépendance)
+          apt:
+            name: curl
+            state: present
+            update_cache: yes
+
+        - name: Télécharger le package Wazuh
+          get_url:
+            url: "https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_{{ wazuh_version }}_amd64.deb"
+            dest: "/tmp/wazuh-agent_{{ wazuh_version }}_amd64.deb"
+            mode: '0644'
+
+        - name: Installer le package avec variable d'environnement
+          shell: |
+            export WAZUH_MANAGER='{{ wazuh_manager_ip }}'
+            dpkg -i /tmp/wazuh-agent_{{ wazuh_version }}_amd64.deb || (apt-get update && apt-get install -f -y)
+          args:
+            executable: /bin/bash
+
+      when: 
+        - installation_needed
+        - ansible_os_family == "Debian"
+      tags: installation
+
+    - name: Installer Wazuh Agent sur RedHat/AlmaLinux
+      block:
+        - name: Installer curl (dépendance)
+          yum:
+            name: curl
+            state: present
+
+        - name: Télécharger la clé GPG
+          get_url:
+            url: https://packages.wazuh.com/key/GPG-KEY-WAZUH
+            dest: /etc/pki/rpm-gpg/RPM-GPG-KEY-WAZUH
+            mode: '0644'
+
+        - name: Importer la clé GPG
+          rpm_key:
+            key: /etc/pki/rpm-gpg/RPM-GPG-KEY-WAZUH
+            state: present
+
+        - name: Installer le package Wazuh
+          yum:
+            name: "https://packages.wazuh.com/4.x/yum/wazuh-agent-{{ wazuh_version }}.x86_64.rpm"
+            state: present
+
+      when: 
+        - installation_needed
+        - ansible_os_family == "RedHat"
+      tags: installation
+
+    # PHASE 3: VÉRIFICATION APRÈS INSTALLATION
+    - name: Vérifier l'installation
+      block:
+        - name: Vérifier le binaire après installation
+          stat:
+            path: /var/ossec/bin/wazuh-agentd
+          register: check_installation
+          ignore_errors: yes
+
+        - name: Afficher le résultat de l'installation
+          debug:
+            msg: |
+              {{ inventory_hostname }} - Résultat installation:
+              - Binaire installé: {{ check_installation.stat.exists | default(false) }}
+              - Chemin: /var/ossec/bin/wazuh-agentd
+      when: installation_needed
+      tags: verification
+
+    # PHASE 4: RECONFIGURATION SYSTEMD
+    - name: Recharger systemd (toujours)
+      systemd:
+        daemon_reload: yes
+      tags: configuration
+
+    # PHASE 5: CONFIGURATION WAZUH (toujours appliquer)
+    - name: Créer le répertoire de configuration si nécessaire
+      file:
+        path: /var/ossec/etc
+        state: directory
+        mode: '0755'
+      tags: configuration
+
+    - name: Configurer l'agent Wazuh
+      copy:
+        content: |
+          <ossec_config>
+            <client>
+              <server>
+                <address>{{ wazuh_manager_ip }}</address>
+                <port>1514</port>
+                <protocol>tcp</protocol>
+              </server>
+              <config-profile>
+                {% if ansible_distribution == "Debian" or ansible_distribution == "Ubuntu" %}debian,ubuntu
+                {% elif ansible_distribution == "AlmaLinux" or ansible_distribution == "CentOS" %}almalinux,centos,rhel  
+                {% else %}linux{% endif %}
+              </config-profile>
+              <notify_time>10</notify_time>
+              <time-reconnect>60</time-reconnect>
+              <auto_restart>yes</auto_restart>
+            </client>
+            <syscheck>
+              <disabled>no</disabled>
+              <frequency>43200</frequency>
+              <scan_on_start>yes</scan_on_start>
+              <auto_ignore>no</auto_ignore>
+            </syscheck>
+            <rootcheck>
+              <disabled>no</disabled>
+              <check_unixaudit>yes</check_unixaudit>
+            </rootcheck>
+            <active-response>
+              <disabled>no</disabled>
+            </active-response>
+          </ossec_config>
+        dest: /var/ossec/etc/ossec.conf
+        mode: '0644'
+        backup: yes
+      tags: configuration
+
+    # PHASE 6: VÉRIFICATION DE LA CONFIGURATION
+    - name: Vérifier la syntaxe de la configuration
+      command: /var/ossec/bin/wazuh-agentd -t
+      register: config_test
+      changed_when: false
+      ignore_errors: yes
+      tags: verification
+
+    - name: Afficher le résultat du test de configuration
+      debug:
+        msg: "{{ inventory_hostname }} - Test configuration: {{ '✅ OK' if config_test.rc == 0 else '⚠️ ÉCHEC (code: ' ~ config_test.rc|string ~ ')' }}"
+      tags: verification
+
+    # PHASE 7: DÉMARRAGE DU SERVICE
+    - name: Démarrer et activer l'agent Wazuh
+      systemd:
+        name: wazuh-agent
+        state: started
+        enabled: yes
+      tags: service
+
+    # PHASE 8: VÉRIFICATION FINALE
+    - name: Vérifier le statut final du service
+      block:
+        - name: Obtenir le statut systemd
+          systemd:
+            name: wazuh-agent
+          register: service_status
+          ignore_errors: yes
+
+        - name: Tester la connexion au manager
+          shell: |
+            timeout 3 bash -c 'echo > /dev/tcp/{{ wazuh_manager_ip }}/1514' 2>/dev/null && echo "CONNECTÉ" || echo "NON_CONNECTÉ"
+          args:
+            executable: /bin/bash
+          register: connection_test
+          changed_when: false
+          ignore_errors: yes
+
+        - name: Compter les processus Wazuh
+          shell: |
+            ps aux | grep -E '(wazuh-agentd|wazuh-syscheckd|wazuh-logcollector|wazuh-modulesd)' | grep -v grep | wc -l
+          args:
+            executable: /bin/bash
+          register: process_count
+          changed_when: false
+          ignore_errors: yes
+
+        - name: Afficher le résultat final
+          debug:
+            msg: |
+              🎯 {{ inventory_hostname }} - DÉPLOIEMENT TERMINÉ
+              ✅ Service: {{ service_status.status.ActiveState | default('inconnu') }}
+              🔌 Connexion: {{ connection_test.stdout | default('non_testée') }}
+              📊 Processus Wazuh: {{ process_count.stdout | default('0') }}
+              🏷️ Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}
+      tags: verification
+
+    # PHASE 9: NETTOYAGE
+    - name: Nettoyer les fichiers temporaires
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/wazuh-agent-*.deb"
+        - "/tmp/wazuh-agent-*.rpm"
+        - "/tmp/GPG-KEY-WAZUH"
+      ignore_errors: yes
+      tags: cleanup
+
+    # PHASE 10: RÉSUMÉ GLOBAL
+    - name: Résumé global du déploiement
+      debug:
+        msg: |
+          📊 RÉSUMÉ DU DÉPLOIEMENT WAZUH
+          ==============================
+          Nombre total de machines: {{ groups['all'] | length }}
+          Manager Wazuh: {{ wazuh_manager_ip }}
+          Port: 1514 (TCP)
+
+          Instructions:
+          1. Vérifiez l'interface: https://{{ wazuh_manager_ip }}
+          2. Les agents devraient apparaître dans quelques minutes
+          3. Vérifiez les logs: /var/ossec/logs/ossec.log
+
+          🔍 Pour vérifier manuellement:
+          - systemctl status wazuh-agent
+          - /var/ossec/bin/wazuh-agentd -t
+          - tail -f /var/ossec/logs/ossec.log
+      run_once: yes
+      tags: summary
